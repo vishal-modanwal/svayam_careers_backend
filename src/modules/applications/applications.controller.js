@@ -1,5 +1,9 @@
 import pool from '../../config/db.js';
 import { v4 as uuid } from 'uuid';
+import {
+  sendApplicationConfirmationEmail,
+  sendInterviewScheduledEmail,
+} from '../../services/mail.service.js';
 
 const safeJson = (val, fallback = []) => {
   if (!val) return fallback;
@@ -10,6 +14,7 @@ const safeJson = (val, fallback = []) => {
 // ── POST submit application (public) ──────────
 export const submitApplication = async (req, res) => {
   const conn = await pool.getConnection();
+  let emailPayload = null;
   try {
     await conn.beginTransaction();
 
@@ -25,7 +30,9 @@ export const submitApplication = async (req, res) => {
 
     // Check job exists
     const [jobs] = await conn.execute(
-      `SELECT id FROM jobs WHERE id = ? AND status = 'published'`,
+      `SELECT id, title, designation
+       FROM jobs
+       WHERE id = ? AND status = 'published'`,
       [jobId]
     );
     if (!jobs[0]) {
@@ -40,8 +47,18 @@ export const submitApplication = async (req, res) => {
     );
 
     if (existing[0]) {
-      // Update karo latest info se
       applicantId = existing[0].id;
+      const [dupApp] = await conn.execute(
+        `SELECT id FROM applications WHERE job_id = ? AND applicant_id = ?`,
+        [jobId, applicantId]
+      );
+      if (dupApp[0]) {
+        await conn.rollback();
+        return res.status(409).json({
+          message: 'You have already applied for this job',
+        });
+      }
+      // Update karo latest info se
       await conn.execute(
         `UPDATE applicants SET
           first_name=?, last_name=?, phone=?,
@@ -92,6 +109,14 @@ export const submitApplication = async (req, res) => {
 );
 
     await conn.commit();
+
+    emailPayload = {
+      to: email,
+      firstName,
+      jobTitle: jobs[0].title || jobs[0].designation || 'the selected role',
+      status: 'Submitted',
+    };
+
     res.status(201).json({
       message: 'Application submitted successfully',
       id: appId
@@ -99,15 +124,23 @@ export const submitApplication = async (req, res) => {
 
   } catch (err) {
     await conn.rollback();
-    console.error(err);
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({
-        message: 'You have already applied for this job'
+        message: 'You have already applied for this job',
       });
     }
+    console.error(err);
     res.status(500).json({ message: 'Failed to submit application' });
   } finally {
     conn.release();
+  }
+
+  if (emailPayload) {
+    try {
+      await sendApplicationConfirmationEmail(emailPayload);
+    } catch (emailErr) {
+      console.error('Application confirmation email failed:', emailErr.message);
+    }
   }
 };
 
@@ -247,20 +280,73 @@ export const getApplicationById = async (req, res) => {
 };
 
 // ── PATCH update status (admin) ────────────────
+// JSON body keys (camelCase only): status, adminNotes?, interviewDate?, interviewTime?, interviewMode?, interviewLink?, interviewLocation?
+// When status is interview_scheduled: interviewDate, interviewTime, interviewMode required; interviewLink and/or interviewLocation (at least one non-empty).
 export const updateApplicationStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNotes } = req.body;
+    const {
+      status,
+      adminNotes,
+      interviewDate,
+      interviewTime,
+      interviewMode,
+      interviewLink,
+      interviewLocation,
+    } = req.body;
 
-    // Current status lo
+    // Current status + candidate details lo
     const [current] = await pool.execute(
-      `SELECT status FROM applications WHERE id = ?`, [id]
+      `SELECT
+         a.status,
+         ap.first_name,
+         ap.email,
+         j.title,
+         j.designation
+       FROM applications a
+       JOIN applicants ap ON ap.id = a.applicant_id
+       JOIN jobs j ON j.id = a.job_id
+       WHERE a.id = ?`,
+      [id]
     );
     if (!current[0]) {
       return res.status(404).json({ message: 'Application not found' });
     }
 
     const oldStatus = current[0].status;
+    const normalizedStatus = String(status || '').toLowerCase();
+    const sendsInterviewScheduleMail =
+      normalizedStatus === 'interview_scheduled';
+    const normalizedInterviewMode = String(interviewMode ?? '').trim();
+
+    if (sendsInterviewScheduleMail) {
+      const hasDate = Boolean(
+        interviewDate != null && String(interviewDate).trim()
+      );
+      const hasTime = Boolean(
+        interviewTime != null && String(interviewTime).trim()
+      );
+      const hasMode = Boolean(normalizedInterviewMode);
+      const hasVenue = Boolean(
+        (interviewLink != null && String(interviewLink).trim()) ||
+          (interviewLocation != null && String(interviewLocation).trim())
+      );
+
+      if (!hasDate || !hasTime || !hasMode || !hasVenue) {
+        const missing = [];
+        if (!hasDate) missing.push('interviewDate');
+        if (!hasTime) missing.push('interviewTime');
+        if (!hasMode) missing.push('interviewMode');
+        if (!hasVenue) {
+          missing.push('interviewLink and/or interviewLocation');
+        }
+        return res.status(400).json({
+          message:
+            'interview_scheduled requires interview date, time, mode, and link or location from the client',
+          missing,
+        });
+      }
+    }
 
     // Update karo
     await pool.execute(
@@ -275,6 +361,23 @@ export const updateApplicationStatus = async (req, res) => {
       ) VALUES (?,?,?,?,?)`,
       [id, oldStatus, status, req.user.id, adminNotes || null]
     );
+
+    if (sendsInterviewScheduleMail) {
+      try {
+        await sendInterviewScheduledEmail({
+          to: current[0].email,
+          firstName: current[0].first_name,
+          jobTitle: current[0].title || current[0].designation || 'selected role',
+          interviewDate,
+          interviewTime,
+          interviewMode: normalizedInterviewMode,
+          interviewLink,
+          interviewLocation,
+        });
+      } catch (emailErr) {
+        console.error('Interview schedule email failed:', emailErr.message);
+      }
+    }
 
     res.json({ message: 'Status updated successfully' });
   } catch (err) {
