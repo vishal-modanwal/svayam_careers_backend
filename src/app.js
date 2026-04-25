@@ -16,9 +16,13 @@ const __dirname  = path.dirname(__filename);
 const app = express();
 
 app.use(cors({
-  origin: '*',   // ya specific port
+  origin: [
+    'http://localhost:4200',
+    'http://localhost:4300',
+  ],
   methods: ['GET','POST','PUT','PATCH','DELETE'],
-  allowedHeaders: ['Content-Type','Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Disposition']  // ← ADD
 }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

@@ -203,3 +203,33 @@ export const deleteJob = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+export const getDesignations = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT DISTINCT designation
+       FROM jobs
+       WHERE status = 'published'`
+    );
+    res.json(rows.map(r => r.designation));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const getAllSkills = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT skills FROM jobs WHERE status = 'published'`
+    );
+    const allSkills = rows.flatMap(r => {
+      try { return JSON.parse(r.skills) || []; }
+      catch { return []; }
+    });
+    res.json([...new Set(allSkills)].sort());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
