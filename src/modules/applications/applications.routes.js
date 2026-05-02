@@ -35,7 +35,7 @@ const upload = multer({
 
 const router = Router();
 
-// Public — koi bhi apply kar sakta hai
+// Public route
 router.post('/', upload.single('resume'), submitApplication);
 
 // Admin only

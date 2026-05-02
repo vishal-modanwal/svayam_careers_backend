@@ -1,5 +1,5 @@
+import { randomUUID } from 'node:crypto';
 import pool from '../../config/db.js';
-import { v4 as uuid } from 'uuid';
 import {
   sendApplicationConfirmationEmail,
   sendInterviewScheduledEmail,
@@ -75,7 +75,7 @@ export const submitApplication = async (req, res) => {
       );
     } else {
       // Naya applicant banao
-      applicantId = uuid();
+      applicantId = randomUUID();
       await conn.execute(
         `INSERT INTO applicants (
           id, first_name, last_name, email, phone,
@@ -92,7 +92,7 @@ export const submitApplication = async (req, res) => {
     }
 
     // Application banao
-    const appId = uuid();
+    const appId = randomUUID();
     await conn.execute(
       `INSERT INTO applications (
         id, job_id, applicant_id, cover_note, resume_url, status
@@ -100,13 +100,13 @@ export const submitApplication = async (req, res) => {
       [appId, jobId, applicantId, coverNote || null, resumeUrl]
     );
 
-    // Status log
-   await conn.execute(
-  `INSERT INTO application_status_log (
-    application_id, old_status, new_status, note
-  ) VALUES (?,NULL,'submitted','Initial submission')`,
-  [appId]
-);
+    // Public apply: no JWT user — use sentinel so strict / NOT NULL changed_by columns still insert.
+    await conn.execute(
+      `INSERT INTO application_status_log (
+        application_id, new_status, changed_by, note
+      ) VALUES (?,'submitted',?,?)`,
+      [appId, 'public-applicant', 'Initial submission (applicant, public form)']
+    );
 
     await conn.commit();
 

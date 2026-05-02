@@ -4,7 +4,7 @@ import dotenv     from 'dotenv';
 import path       from 'path';
 import { fileURLToPath } from 'url';
 
-import authRoutes        from './modules/auth/auth.routes.js';
+
 import jobRoutes         from './modules/jobs/jobs.routes.js';
 import applicationRoutes from './modules/applications/applications.routes.js';
 
@@ -25,10 +25,14 @@ app.use(cors({
   exposedHeaders: ['Content-Disposition']  // ← ADD
 }));
 app.use(express.json());
+
+app.use((req,res)=>{
+  console.log(req.method + req.url);
+})
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
-app.use('/api/auth',         authRoutes);
+
 app.use('/api/jobs',         jobRoutes);
 app.use('/api/applications', applicationRoutes);
 

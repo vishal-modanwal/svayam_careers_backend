@@ -1,16 +1,8 @@
-CREATE DATABASE IF NOT EXISTS career_portal;
-USE career_portal;
+-- Full schema for a fresh database (single source of truth). Legacy installs: align tables manually from this file.
+CREATE DATABASE IF NOT EXISTS svayam_vishal;
+USE svayam_vishal;
 
--- 1. USERS (admin)
-CREATE TABLE users (
-  id            CHAR(36)     PRIMARY KEY,
-  email         VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  role          ENUM('admin') NOT NULL DEFAULT 'admin',
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. JOBS
+-- 1. JOBS
 CREATE TABLE jobs (
   id               CHAR(36)     PRIMARY KEY,
   title            VARCHAR(255) NOT NULL,
@@ -28,14 +20,13 @@ CREATE TABLE jobs (
   salary_max       INT          DEFAULT NULL,
   currency         VARCHAR(10)  DEFAULT 'INR',
   status           ENUM('draft','published','closed') DEFAULT 'draft',
-  posted_by        CHAR(36)     NOT NULL,
+  posted_by        VARCHAR(64)  NOT NULL DEFAULT 'admin',
   created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
-                   ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (posted_by) REFERENCES users(id)
+                   ON UPDATE CURRENT_TIMESTAMP
 );
 
--- 3. APPLICANTS
+-- 2. APPLICANTS
 CREATE TABLE applicants (
   id                  CHAR(36)     PRIMARY KEY,
   first_name          VARCHAR(100) NOT NULL,
@@ -51,7 +42,7 @@ CREATE TABLE applicants (
                       ON UPDATE CURRENT_TIMESTAMP
 );
 
--- 4. APPLICATIONS
+-- 3. APPLICATIONS
 CREATE TABLE applications (
   id           CHAR(36) PRIMARY KEY,
   job_id       CHAR(36) NOT NULL,
@@ -71,24 +62,29 @@ CREATE TABLE applications (
   UNIQUE KEY unique_application (job_id, applicant_id)
 );
 
--- 5. STATUS LOG
+-- 4. STATUS LOG (changed_by optional; e.g. JWT subject string)
 CREATE TABLE application_status_log (
   id             INT      PRIMARY KEY AUTO_INCREMENT,
   application_id CHAR(36) NOT NULL,
   old_status     VARCHAR(30),
   new_status     VARCHAR(30) NOT NULL,
-  changed_by     CHAR(36)    NOT NULL,
+  changed_by     VARCHAR(64) NULL DEFAULT NULL,
   note           TEXT,
   changed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-  FOREIGN KEY (changed_by)     REFERENCES users(id)
+  FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
 );
 
--- ADMIN SEED
-INSERT INTO users (id, email, password_hash, role) VALUES (
-  'admin-001',
-  'admin@svayam.com',
-  '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
-  'admin'
-);
--- Password: password
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INT NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(50) DEFAULT 'admin',
+  last_login DATETIME DEFAULT NULL,
+  valid_from DATETIME DEFAULT CURRENT_TIMESTAMP,
+  valid_upto DATETIME DEFAULT '2099-12-31 23:59:59',
+  txn_start TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+  txn_end TIMESTAMP(6) NULL DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_username (username),
+  KEY idx_admin_users_validity (valid_from, valid_upto)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

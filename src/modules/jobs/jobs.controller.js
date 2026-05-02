@@ -1,5 +1,5 @@
+import { randomUUID } from 'node:crypto';
 import pool from '../../config/db.js';
-import { v4 as uuid } from 'uuid';
 
 // ── Helper ─────────────────────────────────────
 const parseJob = (row) => ({
@@ -108,15 +108,15 @@ export const createJob = async (req, res) => {
       requirements = [], salary, status = 'draft'
     } = req.body;
 
-    const id = uuid();
+    const id = randomUUID();
 
     await pool.execute(
       `INSERT INTO jobs (
         id, title, designation, department, location,
         employment_type, experience_min, experience_max,
         description, skills, responsibilities, requirements,
-        salary_min, salary_max, currency, status, posted_by
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        salary_min, salary_max, currency, status
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, title, designation, department, location,
         employmentType, experienceMin, experienceMax,
@@ -127,8 +127,7 @@ export const createJob = async (req, res) => {
         salary?.min || null,
         salary?.max || null,
         salary?.currency || 'INR',
-        status,
-        req.user.id
+        status
       ]
     );
 
