@@ -8,7 +8,7 @@ import {
   updateApplicationStatus
 } from './applications.controller.js';
 import { verifyToken } from '../../middleware/auth.js';
-import { allow }       from '../../middleware/authorization.js';
+
 
 // Multer config
 const storage = multer.diskStorage({
@@ -39,8 +39,8 @@ const router = Router();
 router.post('/', upload.single('resume'), submitApplication);
 
 // Admin only
-router.get('/',    verifyToken, allow('admin'), getAllApplications);
-router.get('/:id', verifyToken, allow('admin'), getApplicationById);
-router.patch('/:id/status', verifyToken, allow('admin'), updateApplicationStatus);
+router.get('/',    verifyToken, getAllApplications);
+router.get('/:id', verifyToken, getApplicationById);
+router.patch('/:id/status', verifyToken,updateApplicationStatus);
 
 export default router;
